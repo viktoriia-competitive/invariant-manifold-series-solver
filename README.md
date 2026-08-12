@@ -114,7 +114,7 @@ Every new coefficient bends the initial eigendirection into the nonlinear invari
   <img src="assets/series_build.gif" width="82%" alt="Taylor series building the invariant curve">
 </p>
 
-The animation uses the actual $N=8$ rational-map test stored in `solution67.py`.
+The animation uses the actual $N=8$ rational-map test stored in `solution.py`.
 
 ---
 
