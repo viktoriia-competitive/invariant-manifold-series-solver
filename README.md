@@ -446,7 +446,7 @@ Values are printed using 17-digit scientific notation.
 ## Run
 
 ```bash
-python2 solution67.py < input.txt
+python2 solution.py < input.txt
 ```
 
 Install NumPy if needed:
