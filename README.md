@@ -462,7 +462,7 @@ python2.7 -m pip install numpy
 ```text
 invariant-manifold-series-solver/
 ├── README.md
-├── solution67.py
+├── solution.py
 ├── requirements.txt
 └── assets/
     ├── hero.png
