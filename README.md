@@ -1,204 +1,54 @@
-<p align="center">
-  <img src="assets/hero.png" width="100%" alt="Invariant Manifold Series Solver">
-</p>
+<div align="center">
 
-<p align="center">
-  <b>Taylor parameterization of a one-dimensional invariant manifold for rational maps.</b><br>
-  Find the eigendirection. Build the series. Match the dynamics.
-</p>
+# Runline
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-2.7-3776AB?logo=python&logoColor=white">
-  <img src="https://img.shields.io/badge/NumPy-required-013243?logo=numpy&logoColor=white">
-  <img src="https://img.shields.io/badge/topic-dynamical%20systems-9A72AC">
-  <img src="https://img.shields.io/badge/method-parameterization-83C167">
-</p>
+### Asynchronous online judge and evaluation platform
+
+**Runline** is an online judge for running and evaluating programming submissions.
+
+</div>
 
 ---
 
-## The idea
+I built Runline during the **KSI Internship** under the mentorship of **Radosław Myśliwiec**.
 
-Let
+The main goal of the project was to get hands-on experience with asynchronous processing, failure handling, execution isolation and backend architecture instead of treating a submission as one long HTTP request.
 
-```math
-f:\mathbb{R}^n\rightarrow\mathbb{R}^n
-```
+At a high level:
 
-be a rational map with a known fixed point $p$:
+1. the API accepts a submission;
+2. the submission and an evaluation command are saved in PostgreSQL;
+3. a worker receives the command through Redis Streams;
+4. the execution engine compiles and runs the submitted code against the challenge tests;
+5. the result and execution history are stored back in PostgreSQL.
 
-```math
-f(p)=p.
-```
-
-We want a one-dimensional curve
-
-```math
-J:\mathbb{R}\rightarrow\mathbb{R}^n
-```
-
-passing through $p$ and invariant under the dynamics.
-
-The central equation is
-
-```math
-f(J(t))=J(\lambda t).
-```
-
-Geometrically, applying $f$ to a point on the curve is equivalent to rescaling its parameter by $\lambda$.
-
-<p align="center">
-  <img src="assets/invariance_equation.gif" width="82%" alt="Invariant manifold functional equation">
-</p>
-
-For the reference example, $\lambda\approx0.415571$, so the parameter contracts toward the fixed point under iteration.
+The repository also includes a Next.js web interface with a Monaco-based code editor.
 
 ---
 
-## Start with the linear dynamics
+## Contents
 
-At the fixed point, compute
-
-```math
-Df(p).
-```
-
-The solver selects the unique eigenvalue with the smallest modulus,
-
-```math
-|\lambda|=\min_i|\lambda_i|,
-```
-
-and its normalized eigenvector $u$.
-
-<p align="center">
-  <img src="assets/eigenvalue_selection.png" width="72%" alt="Eigenvalue selection">
-</p>
-
-The orientation of $u$ is fixed so that its first nonzero coordinate is positive.
-
-Then
-
-```math
-J(0)=p,
-\qquad
-J'(0)=u,
-```
-
-so the first approximation is simply
-
-```math
-J(t)\approx p+ut.
-```
+* [Architecture](#architecture)
+* [Deployment topology](#deployment-topology)
+* [Submission flow](#submission-flow)
+* [Attempt lifecycle](#attempt-lifecycle)
+* [Reliability and failure handling](#reliability-and-failure-handling)
+* [Execution engine](#execution-engine)
+* [Technology stack](#technology-stack)
+* [Challenge bank](#challenge-bank)
+* [Running locally](#running-locally)
+* [Development commands](#development-commands)
+* [API](#api)
+* [Project structure](#project-structure)
+* [Configuration](#configuration)
+* [Testing](#testing)
+* [Security and isolation](#security-and-isolation)
+* [Architecture decisions](#architecture-decisions)
+* [Limitations](#limitations)
 
 ---
 
-## Build the manifold as a Taylor series
-
-The parameterization is written as
-
-```math
-J(t)=J_0+J_1t+J_2t^2+\cdots+J_Nt^N,
-```
-
-with
-
-```math
-J_0=p,
-\qquad
-J_1=u.
-```
-
-Every new coefficient bends the initial eigendirection into the nonlinear invariant curve.
-
-<p align="center">
-  <img src="assets/series_build.gif" width="82%" alt="Taylor series building the invariant curve">
-</p>
-
-The animation uses the actual $N=8$ rational-map test stored in `solution.py`.
-
----
-
-## The coefficient equation
-
-Insert the Taylor series into
-
-```math
-f(J(t))=J(\lambda t).
-```
-
-Suppose $J_0,\ldots,J_{k-1}$ are already known.  
-The nonlinear contribution at order $k$ is collected in $\Delta_k$.
-
-Then the next coefficient is obtained by solving
-
-```math
-\left(Df(p)-\lambda^k I\right)J_k=-\Delta_k.
-```
-
-This is the core recurrence implemented by the solver.
-
-The non-resonance condition
-
-```math
-\lambda^k\notin\sigma(Df(p)),
-\qquad k\ge2
-```
-
-makes the matrix invertible and therefore determines $J_k$ uniquely.
-
----
-
-## Rational maps as power series
-
-Each component of the input map is
-
-```math
-f_i(x)=\frac{L_i(x)}{M_i(x)}.
-```
-
-The implementation substitutes the current vector-valued Taylor series into the numerator and denominator.
-
-It then computes the truncated inverse of
-
-```math
-M_i(J(t))
-```
-
-and multiplies the resulting series.
-
-The main numerical helpers are:
-
-| Function | Role |
-|---|---|
-| `gdim` | count monomials up to a given degree |
-| `fdeg` | infer polynomial degree from coefficient count |
-| `monoms` | generate monomial multi-indices |
-| `evp` | evaluate a polynomial |
-| `grp` | compute a polynomial gradient |
-| `pmul` | multiply truncated power series |
-| `pinv` | invert a truncated power series |
-| `evs` | substitute vector series into a polynomial |
-
----
-
-## Monomial ordering
-
-The coefficient basis is ordered first by total degree and then by reverse lexicographic order.
-
-For $n=3$:
-
-```text
-1
-x, y, z
-x², xy, xz, y², yz, z²
-x³, x²y, x²z, xy², xyz, xz², y³, y²z, yz², z³
-```
-
-This is the ordering generated by `monoms(...)` and expected by the input.
-
----
-
-## Algorithm at a glance
+## Architecture
 
 ```mermaid
 ---
@@ -206,277 +56,847 @@ config:
   htmlLabels: false
 ---
 flowchart TB
-    A["Read N, fixed point and map"] --> B["Build monomial bases"]
-    B --> C["Compute Df(p)"]
-    C --> D["Choose smallest-modulus eigenpair"]
-    D --> E["Set J0 = p and J1 = u"]
-    E --> F["Compute Delta_k"]
-    F --> G["Solve for J_k"]
-    G --> H{"Reached N?"}
-    H -- "No" --> F
-    H -- "Yes" --> I["Print coefficients"]
+    subgraph Client[Client Layer]
+        Browser[Browser]
+        Console[Next.js 15 Console\nReact 19 + Monaco]
+        Browser --> Console
+    end
+
+    subgraph Control[Control Plane]
+        API[FastAPI API\n/control/v2]
+        UC[Application Use Cases]
+        Ports[Inward-facing Ports]
+        API --> UC --> Ports
+    end
+
+    subgraph State[Durable State]
+        PG[(PostgreSQL 16)]
+        Outbox[(control_outbox)]
+        Events[(Lifecycle Events)]
+        Attempts[(Attempts / Projections)]
+        Processed[(processed_commands)]
+
+        PG --- Outbox
+        PG --- Events
+        PG --- Attempts
+        PG --- Processed
+    end
+
+    subgraph Messaging[Async Delivery]
+        Streams[(Redis 7 Streams)]
+        Dead[(Dead-work Stream)]
+    end
+
+    subgraph WorkerLayer[Evaluation Worker]
+        Dispatcher[Outbox Dispatcher]
+        Consumer[Consumer Group Worker]
+        Evaluator[Evaluation Coordinator]
+
+        Dispatcher --> Consumer --> Evaluator
+    end
+
+    subgraph Execution[Execution Boundary]
+        Runner[Runtime Preparer]
+        Sandbox[SandboxProvider]
+        Checker[Output Checker]
+        Policy[Verdict Policy]
+
+        Runner --> Sandbox
+        Sandbox --> Policy
+        Sandbox --> Checker
+    end
+
+    subgraph Content[Challenge Content]
+        Bank[Challenge Bank]
+        Revision[Immutable Revision]
+        Tests[Test Cases]
+
+        Bank --> Revision --> Tests
+    end
+
+    Console -->|HTTP| API
+    Ports -->|transaction| PG
+
+    Outbox --> Dispatcher
+    Dispatcher -->|XADD| Streams
+    Streams -->|consumer group| Consumer
+    Consumer -->|retry exhausted| Dead
+
+    Evaluator --> Runner
+    Evaluator --> Revision
+    Checker --> Tests
+
+    Evaluator -->|verdict + report + events| PG
+
+    API -->|read models| PG
+    Console -->|poll/read attempt| API
+```
+
+PostgreSQL is the source of truth for attempts, lifecycle events and evaluation commands.
+
+Redis is used for delivering work to workers. It is deliberately not required to be available at the exact moment the API accepts a submission.
+
+That is the main reason the submission path uses a transactional outbox.
+
+---
+
+## Deployment topology
+
+The development environment runs as a Docker Compose stack.
+
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+flowchart LR
+    User[Developer / User]
+
+    subgraph Docker[Docker Compose: runline]
+        Console[console\n:3000]
+        API[api\n:8000]
+        Worker[worker]
+        Seed[seed]
+        PG[(postgres\n:5432)]
+        Redis[(redis\n:6379)]
+
+        Console -->|API_URL=http://api:8000| API
+        API --> PG
+        API --> Redis
+        Worker --> PG
+        Worker --> Redis
+        Seed --> PG
+    end
+
+    User -->|http://localhost:3000| Console
+    User -->|http://localhost:8000| API
+```
+
+There are two API addresses on the frontend because the server and browser run in different networking contexts.
+
+Next.js server-side code uses:
+
+```text
+API_URL=http://api:8000
+```
+
+Browser-side code uses:
+
+```text
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ---
 
-## Reference example
+## Submission flow
 
-For
+The web app submits source code to:
 
-```math
-p=(0,\tfrac12)
+```text
+POST /control/v2/attempts
 ```
 
-and
+The API does not immediately run the program.
 
-```math
-f(x,y)=
-\left(
-\frac{x+y+x^2-5xy-2y^2}{1+x-4y},
-\frac{1+2x-y+x^2-4xy+8y^2}{1-2x+8y}
-\right),
+Instead, inside one PostgreSQL transaction, it:
+
+* creates the attempt;
+* appends its initial lifecycle events;
+* stores an `EvaluationCommand` in the outbox.
+
+The request can then return `202 Accepted`.
+
+A separate dispatcher eventually reads the outbox record and publishes the evaluation command to Redis.
+
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+sequenceDiagram
+    autonumber
+
+    actor U as User
+    participant UI as Next.js Console
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant D as Outbox Dispatcher
+    participant R as Redis Streams
+    participant W as Evaluation Worker
+    participant E as Execution Engine
+
+    U->>UI: Submit source code
+    UI->>API: POST /control/v2/attempts
+
+    rect rgb(245,245,245)
+        Note over API,DB: Single database transaction
+        API->>DB: Insert attempt
+        API->>DB: Append lifecycle facts
+        API->>DB: Insert EvaluationCommand into outbox
+    end
+
+    API-->>UI: 202 Accepted + attempt key
+
+    loop Outbox dispatch
+        D->>DB: Read unpublished commands
+        D->>R: XADD evaluation command
+        D->>DB: Mark outbox row published
+    end
+
+    W->>R: Claim command via consumer group
+    W->>DB: Claim attempt + append execution.claimed
+    W->>E: Evaluate immutable challenge revision
+    E-->>W: SuiteResult + per-test metrics
+
+    alt Evaluation completed
+        W->>DB: Persist verdict + report + processed key
+        W->>R: ACK command
+    else Transient infrastructure failure
+        W->>DB: Record retryable failure
+        W->>R: Requeue retry command
+    else Retry budget exhausted
+        W->>DB: Persist INTERNAL_ERROR
+        W->>R: Move to dead-work stream
+    end
+
+    UI->>API: GET attempt / timeline
+    API->>DB: Read current projection + facts
+    API-->>UI: Verdict and report
 ```
 
-the Jacobian has eigenvalues approximately
+One useful property of this setup is that Redis does not have to be available at exactly the same time as the HTTP request.
 
-```math
-0.415571,\qquad1.684429.
-```
-
-The selected eigendirection is
-
-```math
-u\approx(0.677910,-0.735145).
-```
-
-The first terms are
-
-```math
-J_1(t)=0+0.677910t+3.477510t^2+30.497387t^3+\cdots
-```
-
-and
-
-```math
-J_2(t)=0.5-0.735145t-3.764606t^2-31.764952t^3+\cdots.
-```
+If PostgreSQL commits successfully but Redis is temporarily unavailable, the evaluation command stays in the outbox and can be published later.
 
 ---
 
-## Reference tests
+## Attempt lifecycle
 
-The source file contains several commented test cases. They are collapsed here to keep the main page compact.
+An attempt normally starts in `QUEUED` and moves to `RUNNING` when an evaluation worker claims it.
 
-<details>
-<summary><b>Test 1 — polynomial map, p = (-2, 1), N = 8</b></summary>
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+stateDiagram-v2
+    [*] --> QUEUED: attempt.opened / execution.requested
 
-### Input
+    QUEUED --> RUNNING: execution.claimed
+
+    RUNNING --> QUEUED: execution.retryable_failure
+
+    RUNNING --> ACCEPTED: execution.completed
+    RUNNING --> WRONG_ANSWER: execution.completed
+    RUNNING --> TIME_LIMIT: execution.completed
+    RUNNING --> MEMORY_LIMIT: execution.completed
+    RUNNING --> RUNTIME_ERROR: execution.completed
+    RUNNING --> COMPILATION_ERROR: execution.completed
+    RUNNING --> INTERNAL_ERROR: execution.completed
+
+    RUNNING --> INTERNAL_ERROR: execution.terminal_failure
+
+    ACCEPTED --> [*]
+    WRONG_ANSWER --> [*]
+    TIME_LIMIT --> [*]
+    MEMORY_LIMIT --> [*]
+    RUNTIME_ERROR --> [*]
+    COMPILATION_ERROR --> [*]
+    INTERNAL_ERROR --> [*]
+```
+
+Terminal states are:
 
 ```text
-8
--2.0 1.0
-1.0 0.0 1.0 -1.0 0.0 0.0
-1.0
-0.0 -0.5 0.0
-1.0
+ACCEPTED
+WRONG_ANSWER
+TIME_LIMIT
+MEMORY_LIMIT
+RUNTIME_ERROR
+COMPILATION_ERROR
+INTERNAL_ERROR
 ```
 
-The map is
+A retryable infrastructure problem can move an attempt from `RUNNING` back to `QUEUED`.
 
-```math
-f(x,y)=(1-x^2+y,-0.5x).
-```
-
-The source records
-
-```text
-lambda ≈ 0.129171
-u ≈ [0.250130, -0.968212]
-```
-
-### Expected output
-
-```text
--2.00000000000000000e+00 2.50130455372283012e-01 -2.40790081057862997e-03 5.28338953332533279e-06 -4.71041783086010985e-09 2.00001401961776272e-12 -4.79385815999818434e-16 7.15766958609483900e-20 -7.07869721657971240e-24
-1.00000000000000000e+00 -9.68212143744982323e-01 7.21566715767614358e-02 -1.22570082357743512e-03 8.45989993330313844e-06 -2.78081937780031719e-08 5.16010891630289397e-11 -5.96457195799737034e-14 4.56662047444892135e-17
-```
-
-</details>
-
-<br>
-
-<details>
-<summary><b>Test 2 — rational 2D map, p = (0, 1/2), N = 8</b></summary>
-
-### Input
-
-```text
-8
-0.0 0.5
-0.0 1.0 1.0 1.0 -5.0 -2.0
-1.0 1.0 -4.0
-1.0 2.0 -1.0 1.0 -4.0 8.0
-1.0 -2.0 8.0
-```
-
-The source records
-
-```text
-lambda ≈ 0.415571
-u ≈ [0.677910, -0.735145]
-```
-
-### Expected output
-
-```text
-0.00000000000000000e+00 6.77909863126612833e-01 3.47750984114282247e+00 3.04973874188263565e+01 3.35070577102927814e+02 4.15434724966700651e+03 5.54676226803937316e+04 7.78181743372802855e+05 1.13091536117502581e+07
-5.00000000000000000e-01 -7.35145031592853160e-01 -3.76460550014192741e+00 -3.17649516078457950e+01 -3.39135075825192303e+02 -4.12961402666120830e+03 -5.45319890830002623e+04 -7.59806183515596204e+05 -1.09929359684497677e+07
-```
-
-</details>
-
-<br>
-
-<details>
-<summary><b>Test 3 — full rational 3D map, p = (0,0,0), N = 8</b></summary>
-
-### Input
-
-```text
-8
-0 0 0
-0 1 2 -1 2 2 -2 -1 1 1 1 -1 -3 2 -1 1 -1 4 6 1
-1 1 2 1 2 2 3 3 2 4
-0 1 1 2 1 3 2 -2 -4 1
-1 1 2 -1 2 2 -2 -1 1 3
-0 1 2 3 2 2 3 3 2 4
-1 1 1 2 1 3 -4 -2 -4 -1
-```
-
-The source records
-
-```text
-lambda ≈ -0.681331
-u ≈ [0.787904, -0.605027, 0.114673]
-```
-
-### Expected output
-
-```text
-0.00000000000000000e+00 7.87903884904654794e-01 3.68073038852827539e+00 5.13175753380626745e+01 4.88349718239827439e+02 7.47490200976352935e+03 9.49427768632920488e+04 1.51271806867063697e+06 2.21266722549171448e+07
-0.00000000000000000e+00 -6.05026884077769056e-01 -1.28233614203003055e+00 -3.58531518267618665e+01 -2.36215469802692581e+02 -4.84660259809042145e+03 -5.16471629160246885e+04 -9.37999849678651313e+05 -1.26274824300909229e+07
-0.00000000000000000e+00 1.14673177750067204e-01 -1.07245149129567174e+00 3.54611819111069781e+00 -8.08275988309783173e+01 9.07352768740644819e+01 -9.84559473136976158e+03 -3.03865798752493793e+04 -1.66473396332354541e+06
-```
-
-</details>
-
-<br>
-
-<details>
-<summary><b>Test 4 — diagonal linear sanity check</b></summary>
-
-For
-
-```math
-f(x,y)=(0.3x,0.7y),
-```
-
-the smallest-modulus eigenvalue is $0.3$ and $u=(1,0)$.
-
-### Input
-
-```text
-4
-0.0 0.0
-0.0 0.3 0.0
-1.0
-0.0 0.0 0.7
-1.0
-```
-
-### Expected output
-
-```text
-0.00000000000000000e+00 1.00000000000000000e+00 -0.00000000000000000e+00 -0.00000000000000000e+00 -0.00000000000000000e+00
-0.00000000000000000e+00 0.00000000000000000e+00 0.00000000000000000e+00 0.00000000000000000e+00 0.00000000000000000e+00
-```
-
-The invariant curve is exactly the $x$-axis, so every nonlinear coefficient vanishes.
-
-</details>
+Lifecycle events are stored separately from the current attempt projection. The projection is therefore disposable and can be rebuilt by replaying the events in sequence order.
 
 ---
 
-## Input
+## Reliability and failure handling
 
-```text
-N
-p1 p2 ... pn
-L1 coefficients
-M1 coefficients
-...
-Ln coefficients
-Mn coefficients
+A large part of Runline deals with failures that can happen between accepting a submission and completing its evaluation.
+
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+flowchart LR
+    A[HTTP submission] --> T{PostgreSQL transaction}
+
+    T -->|commit| Attempt[Attempt + lifecycle]
+    T -->|commit| Outbox[Evaluation command]
+
+    Outbox --> Dispatch[Dispatcher]
+    Dispatch --> Redis[(Redis Stream)]
+    Redis --> Worker[Worker]
+
+    Worker --> Check{delivery_key\nalready processed?}
+
+    Check -->|yes| Ack[ACK duplicate]
+    Check -->|no| Run[Execute]
+
+    Run --> Success{Execution path}
+
+    Success -->|judge result| Persist[Persist result + processed key\nin one DB transaction]
+    Success -->|transient failure| Retry[Create retry command]
+    Success -->|attempts exhausted| Terminal[Persist INTERNAL_ERROR]
+
+    Persist --> Ack
+    Retry --> Redis
+    Terminal --> Dead[(Dead-work stream)]
 ```
 
-Each coordinate is interpreted as
+Some of the failure cases the implementation tries to handle are:
 
-```math
-f_i(x)=\frac{L_i(x)}{M_i(x)}.
-```
+| Failure                                                        | Expected behaviour                               |
+| -------------------------------------------------------------- | ------------------------------------------------ |
+| API crashes before the DB transaction commits                  | no accepted attempt exists                       |
+| Redis is unavailable after the DB commit                       | command remains in the outbox                    |
+| Dispatcher publishes the same command twice                    | duplicate delivery is tolerated                  |
+| Worker dies after claiming a message                           | pending Redis message can be reclaimed           |
+| Worker commits the result but dies before ACK                  | redelivery is ignored using `processed_commands` |
+| Evaluation fails because of a temporary infrastructure problem | attempt can be retried                           |
+| Retry budget is exhausted                                      | attempt becomes `INTERNAL_ERROR`                 |
 
-The numerator and denominator degrees are inferred independently from their coefficient counts.
+### Idempotency
+
+There are several places where the same operation can be received more than once, so the project uses different identifiers at different boundaries:
+
+* request keys for duplicate submission requests;
+* `delivery_key` for command delivery;
+* lifecycle `dedupe_key` values for events;
+* `processed_commands` for completed worker commands;
+* deterministic run and retry keys.
+
+They are separate because an HTTP duplicate, a duplicate Redis delivery and a duplicate lifecycle event are different problems.
 
 ---
 
-## Output
+## Execution engine
 
-The solver prints one row per coordinate:
+The execution engine is separate from the queue and persistence code.
 
-```text
-J_i,0 J_i,1 J_i,2 ... J_i,N
+It receives source code and a challenge bundle, prepares the runtime, runs the tests and returns a structured result.
+
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+flowchart LR
+    Source[Source Artifact]
+    Bundle[Challenge Bundle]
+
+    Source --> Prepare[Runtime preparation / compilation]
+
+    Bundle --> Limits[Per-test limits]
+    Bundle --> Cases[Test cases]
+    Bundle --> CheckerSpec[Checker specification]
+
+    Prepare -->|compile failure| CE[COMPILATION_ERROR]
+    Prepare --> Exec[ProgramRunner]
+
+    Limits --> Exec
+    Cases --> Exec
+
+    Exec --> Sandbox[SandboxProvider]
+
+    Sandbox --> Obs[SandboxResult\nexit · signal · CPU · wall · memory]
+
+    Obs --> Policy[VerdictPolicy]
+
+    Policy -->|timeout| TLE[TIME_LIMIT]
+    Policy -->|OOM / memory| MLE[MEMORY_LIMIT]
+    Policy -->|bad exit| RE[RUNTIME_ERROR]
+    Policy -->|process OK| Compare[Output Checker]
+
+    CheckerSpec --> Compare
+    Cases --> Compare
+
+    Compare -->|match| OK[Test Accepted]
+    Compare -->|mismatch| WA[WRONG_ANSWER]
+
+    OK --> Suite[Suite Aggregation]
+    WA --> Suite
+    TLE --> Suite
+    MLE --> Suite
+    RE --> Suite
+    CE --> Suite
+
+    Suite --> Result[SuiteResult\nverdict + counts + max resources + per-test report]
 ```
 
-Together these rows define the Taylor polynomial of $J$.
+For each test, low-level process information is converted into a contestant-facing verdict.
 
-Values are printed using 17-digit scientific notation.
+The policy checks things such as:
+
+* timeout termination;
+* memory-limit or OOM behaviour;
+* process exit status;
+* output correctness.
+
+### Output checking
+
+For normal deterministic tasks, output is compared using whitespace-separated tokens.
+
+Challenges can also provide a Python custom checker when plain output comparison is not enough.
+
+### Runtime support
+
+| Runtime | Contract / catalogue | Local preparer |
+| ------- | :------------------: | :------------: |
+| Python  |          yes         |       yes      |
+| C++     |          yes         |       yes      |
+| Java    |          yes         |     not yet    |
+| Rust    |          yes         |     not yet    |
+| Go      |          yes         |     not yet    |
+| Bash    |       internal       |       yes      |
+
+Java, Rust and Go can be represented by the runtime contracts and toolchain diagnostics, but the checked-in preparer currently handles Python, C++ and Bash.
 
 ---
 
-## Run
+## Technology stack
+
+| Part         | Technology                                 |
+| ------------ | ------------------------------------------ |
+| Web console  | Next.js 15, React 19, TypeScript           |
+| Editor       | Monaco Editor                              |
+| HTTP API     | FastAPI, Pydantic v2                       |
+| Persistence  | PostgreSQL 16, SQLAlchemy Async, asyncpg   |
+| Messaging    | Redis 7 Streams                            |
+| Worker       | Python, asyncio                            |
+| Judge engine | Python                                     |
+| Isolation    | Linux process provider, optional cgroup v2 |
+| Development  | Docker Compose                             |
+
+---
+
+## Challenge bank
+
+Challenges live under:
+
+```text
+challenge_bank/challenges/<challenge-key>/
+```
+
+A challenge bundle usually looks like this:
+
+```text
+challenge_bank/challenges/<challenge-key>/
+├── challenge.json
+├── statement.md
+├── samples/
+├── tests/
+├── model/
+└── checker/
+```
+
+The repository currently contains:
+
+* **11 challenge bundles**;
+* **220 deterministic test cases**;
+* public samples;
+* hidden evaluation cases;
+* reference implementations;
+* per-test time and memory limits;
+* optional custom checkers.
+
+The complete bank can be audited with:
 
 ```bash
-python2 solution.py < input.txt
+python tooling/audit_challenge_bank.py
 ```
 
-Install NumPy if needed:
+Current result:
+
+```text
+audited 11 challenge bundles and 220 cases
+```
+
+### Immutable revisions
+
+Evaluation commands can include a `challenge_digest`.
+
+When a digest is present, the worker evaluates a materialized immutable revision instead of the mutable challenge files in the current working tree.
+
+This matters for queued submissions. Editing a challenge after a submission has already been accepted should not silently change what that submission means.
+
+---
+
+## Running locally
+
+### Requirements
+
+You need:
+
+* Docker Desktop or Docker Engine;
+* Docker Compose v2;
+* `curl` for the host-side readiness checks.
+
+Clone the repository:
 
 ```bash
-python2.7 -m pip install numpy
+git clone <your-repository-url>
+cd runline-control-plane-redesign
 ```
+
+Start everything with:
+
+```bash
+chmod +x dev.sh
+./dev.sh
+```
+
+The launcher starts:
+
+* PostgreSQL;
+* Redis;
+* challenge seed job;
+* FastAPI API;
+* evaluation worker;
+* Next.js console.
+
+### Local services
+
+| Service     | Address                       |
+| ----------- | ----------------------------- |
+| Web console | `http://localhost:3000`       |
+| API         | `http://localhost:8000`       |
+| Swagger UI  | `http://localhost:8000/docs`  |
+| Liveness    | `http://localhost:8000/live`  |
+| Readiness   | `http://localhost:8000/ready` |
+| PostgreSQL  | `localhost:5432`              |
+| Redis       | `localhost:6379`              |
+
+---
+
+## Development commands
+
+```bash
+./dev.sh
+./dev.sh down
+./dev.sh restart
+./dev.sh rebuild
+./dev.sh reset
+./dev.sh status
+./dev.sh logs
+./dev.sh logs api
+./dev.sh logs worker
+./dev.sh doctor
+```
+
+For most local problems I usually start with:
+
+```bash
+./dev.sh doctor
+./dev.sh logs api
+./dev.sh logs worker
+```
+
+---
+
+## API
+
+The public API is currently versioned under:
+
+```text
+/control/v2
+```
+
+### Challenges
+
+| Method | Endpoint                                         | Purpose                    |
+| ------ | ------------------------------------------------ | -------------------------- |
+| `GET`  | `/control/v2/challenges`                         | list and filter challenges |
+| `GET`  | `/control/v2/challenges/{challengeKey}`          | read one challenge         |
+| `GET`  | `/control/v2/challenges/{challengeKey}/attempts` | list challenge attempts    |
+
+### Attempts
+
+| Method | Endpoint                                     | Purpose                       |
+| ------ | -------------------------------------------- | ----------------------------- |
+| `POST` | `/control/v2/attempts`                       | create and queue an attempt   |
+| `GET`  | `/control/v2/attempts`                       | browse attempts               |
+| `GET`  | `/control/v2/attempts/{attemptKey}`          | read attempt state and report |
+| `GET`  | `/control/v2/attempts/{attemptKey}/source`   | read submitted source         |
+| `GET`  | `/control/v2/attempts/{attemptKey}/timeline` | read lifecycle events         |
+
+### Accounts
+
+| Method | Endpoint                                  | Purpose                      |
+| ------ | ----------------------------------------- | ---------------------------- |
+| `GET`  | `/control/v2/accounts/self`               | current development account  |
+| `GET`  | `/control/v2/accounts/by-handle/{handle}` | resolve an account by handle |
+
+### Example submission
+
+```bash
+curl -X POST http://localhost:8000/control/v2/attempts \
+  -H 'Content-Type: application/json' \
+  -H 'Request-Key: demo-request-001' \
+  -d '{
+    "challengeKey": "rl-batch-dedup",
+    "runtime": "Python",
+    "artifactName": "solution.py",
+    "sourceText": "print(input())\n"
+  }'
+```
+
+The API returns `202 Accepted` and evaluation continues asynchronously.
 
 ---
 
 ## Project structure
 
 ```text
-invariant-manifold-series-solver/
-├── README.md
-├── solution.py
-├── requirements.txt
-└── assets/
-    ├── hero.png
-    ├── series_build.gif
-    ├── invariance_equation.gif
-    └── eigenvalue_selection.png
+runline-control-plane-redesign/
+├── challenge_bank/
+│   └── challenges/
+│
+├── control_plane/
+│   ├── runtime/
+│   │   ├── adapters/
+│   │   ├── contracts/
+│   │   ├── core/
+│   │   ├── http/
+│   │   ├── persistence/
+│   │   ├── storage/
+│   │   ├── use_cases/
+│   │   └── worker/
+│   ├── scripts/
+│   └── tests/
+│
+├── execution_engine/
+│   ├── core/
+│   ├── outer/
+│   ├── platform/linux/
+│   ├── contracts/
+│   ├── fixtures/
+│   ├── tools/
+│   ├── docs/
+│   └── tests/
+│
+├── web_console/
+│   ├── app/
+│   ├── components/
+│   ├── features/
+│   └── lib/
+│
+├── docs/
+│   └── decisions/
+│
+├── tooling/
+├── docker-compose.yml
+├── requirements-dev.txt
+└── dev.sh
 ```
+
+### Layer boundaries
+
+The control plane tries to keep FastAPI and persistence-specific types at the edges.
+
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+flowchart LR
+    HTTP[HTTP / FastAPI]
+    UseCases[Use Cases]
+    Core[Domain Records]
+    Ports[Structural Ports]
+    Adapters[Adapters]
+    Infra[PostgreSQL / Redis / Filesystem]
+
+    HTTP --> UseCases
+    UseCases --> Core
+    UseCases --> Ports
+
+    Adapters -. implement .-> Ports
+    Adapters --> Infra
+
+    style Core stroke-width:3px
+    style UseCases stroke-width:3px
+```
+
+Application workflows operate on domain records and structural ports instead of directly passing FastAPI schemas or SQLAlchemy rows through the whole application.
 
 ---
 
-<p align="center">
-  <b>Linearize at the fixed point. Follow the eigendirection. Correct every Taylor order.</b>
-</p>
+## Configuration
 
-<p align="center">
-  parameterization method · invariant manifolds · rational maps · power series · dynamical systems
-</p>
+Backend configuration is provided through environment variables.
+
+| Variable                      | Purpose                       |
+| ----------------------------- | ----------------------------- |
+| `DATABASE_URL`                | PostgreSQL connection         |
+| `REDIS_URL`                   | Redis connection              |
+| `API_PREFIX`                  | API prefix                    |
+| `CORS_ORIGINS`                | browser CORS configuration    |
+| `QUEUE_NAMESPACE`             | Redis namespace               |
+| `QUEUE_GROUP`                 | Redis consumer group          |
+| `QUEUE_MAX_ATTEMPTS`          | retry limit                   |
+| `QUEUE_VISIBILITY_TIMEOUT_MS` | stale-message reclaim timeout |
+| `AUTO_CREATE_SCHEMA`          | development schema creation   |
+| `EXECUTION_USE_CGROUP`        | optional cgroup support       |
+| `EXECUTION_ISOLATION`         | isolation configuration       |
+
+Frontend networking uses:
+
+```text
+API_URL=http://api:8000
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+The difference is intentional.
+
+Next.js server-side code runs inside the Docker network and can reach the API through the `api` service name.
+
+Browser-side code runs on the host and uses `localhost`.
+
+---
+
+## Testing
+
+### Control plane
+
+```bash
+python -m pytest -q control_plane/tests
+```
+
+### Execution engine
+
+```bash
+python -m pytest -q execution_engine/tests
+```
+
+### Engine smoke test
+
+```bash
+python -m execution_engine.tools.cli smoke
+```
+
+### Challenge bank
+
+```bash
+python tooling/audit_challenge_bank.py
+```
+
+### Frontend
+
+```bash
+cd web_console
+npm install
+npm run typecheck
+npm run build
+```
+
+Some execution and isolation tests require Linux or cgroup capabilities.
+
+---
+
+## Security and isolation
+
+Execution is hidden behind the `SandboxProvider` interface.
+
+The checked-in Linux implementation currently provides development-oriented functionality such as:
+
+* process-group execution;
+* wall-clock deadlines;
+* CPU and memory observation;
+* optional cgroup v2 integration;
+* timeout and OOM classification.
+
+> [!WARNING]
+> The included local process sandbox is **not a production-grade security boundary for hostile code**.
+
+The default Docker Compose configuration currently has:
+
+```text
+EXECUTION_USE_CGROUP=false
+```
+
+A real multi-tenant deployment would need significantly stronger isolation, for example:
+
+* namespaces, containers or micro-VMs;
+* restricted filesystem access;
+* disabled or tightly controlled networking;
+* process-count limits;
+* enforced CPU and memory quotas;
+* syscall filtering;
+* stronger artifact isolation.
+
+The reason the execution code sits behind `SandboxProvider` is that a stronger implementation should be replaceable without changing the control plane or judge semantics.
+
+---
+
+## Architecture decisions
+
+A few decisions are documented separately under:
+
+```text
+docs/decisions/
+```
+
+The main ones are summarized below.
+
+### Inward-facing ports
+
+Use cases depend on structural interfaces for attempts, challenges, accounts, lifecycle facts, revisions, transactions and the command outbox.
+
+FastAPI schemas and SQLAlchemy rows stay near their adapters.
+
+The point is to avoid making the business workflows depend directly on one HTTP or storage implementation.
+
+### Transactional evaluation outbox
+
+Attempt creation and evaluation-command staging happen in the same PostgreSQL transaction.
+
+The dispatcher publishes the command to Redis afterward.
+
+This avoids the awkward case where the API accepts a submission but crashes before the corresponding evaluation job is actually queued.
+
+### Replaceable isolation provider
+
+Process launching, cgroups, deadlines, filesystem exposure and wait-status handling live behind `SandboxProvider`.
+
+The current implementation is useful for development, but it should be possible to replace it with a stronger sandbox without rewriting the rest of the judge.
+
+---
+
+## Limitations
+
+Runline is still a development/internship project rather than a production online judge.
+
+Current limitations include:
+
+* the included process sandbox is intended for local development and capability testing, not hostile multi-tenant code;
+* cgroup enforcement is disabled by default in Docker Compose;
+* Java, Rust and Go preparation is not yet connected to the current local preparer map;
+* authentication and authorization are intentionally minimal;
+* production deployments would need proper monitoring and alerting for outbox backlog, worker lag, retries, stale pending messages and dead-work accumulation.
+
+These limitations are intentionally kept visible rather than presenting the project as production-ready.
+
+---
+
+<div align="center">
+
+### Runline
+
+Asynchronous submission evaluation with durable state, retries and isolated execution.
+
+</div>
